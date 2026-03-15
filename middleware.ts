@@ -1,48 +1,40 @@
-import { auth } from "@/lib/auth";
 import { NextResponse } from "next/server";
+import type { NextRequest } from "next/server";
 
-const ADMIN_ROLES = ["operator", "finance_admin", "compliance_support"];
-const PORTAL_ROLES = ["participant", "vip_participant"];
-
-export default auth((req) => {
+/**
+ * Lightweight middleware that checks for the session cookie only.
+ * Authoritative role/status checks happen in server component layouts
+ * (portal layout, admin layout) which have full Node.js runtime access.
+ *
+ * This avoids importing @/lib/auth (which pulls in Neon/Drizzle)
+ * into the Edge Runtime where Node.js modules are unsupported.
+ */
+export function middleware(req: NextRequest) {
   const { pathname } = req.nextUrl;
-  const session = req.auth as { user?: { role?: string; status?: string } } | null;
 
-  // Admin routes require admin role
-  if (pathname.startsWith("/admin")) {
-    if (!session?.user) {
-      return NextResponse.redirect(new URL("/sign-in", req.url));
-    }
-    if (!ADMIN_ROLES.includes(session.user.role ?? "")) {
-      return NextResponse.redirect(new URL("/", req.url));
-    }
-    return NextResponse.next();
-  }
+  // Check for Auth.js session cookie (database session strategy)
+  const sessionCookie =
+    req.cookies.get("authjs.session-token") ??
+    req.cookies.get("__Secure-authjs.session-token");
 
-  // Portal routes require approved participant
-  if (
-    pathname.startsWith("/opportunities") ||
-    pathname.startsWith("/dashboard") ||
-    pathname.startsWith("/onboarding")
-  ) {
-    if (!session?.user) {
-      return NextResponse.redirect(new URL("/sign-in", req.url));
+  const isAuthenticated = !!sessionCookie?.value;
+
+  // Protected routes: redirect to sign-in if no session cookie
+  if (!isAuthenticated) {
+    if (
+      pathname.startsWith("/admin") ||
+      pathname.startsWith("/opportunities") ||
+      pathname.startsWith("/dashboard") ||
+      pathname.startsWith("/onboarding")
+    ) {
+      const signInUrl = new URL("/sign-in", req.url);
+      signInUrl.searchParams.set("callbackUrl", pathname);
+      return NextResponse.redirect(signInUrl);
     }
-    // Onboarding is accessible to any authenticated user
-    if (pathname.startsWith("/onboarding")) {
-      return NextResponse.next();
-    }
-    // Other portal routes need approved status
-    const isPortalRole = PORTAL_ROLES.includes(session.user.role ?? "");
-    const isApproved = session.user.status === "approved";
-    if (!isPortalRole || !isApproved) {
-      return NextResponse.redirect(new URL("/onboarding", req.url));
-    }
-    return NextResponse.next();
   }
 
   return NextResponse.next();
-});
+}
 
 export const config = {
   matcher: [
