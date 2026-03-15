@@ -29,7 +29,6 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
       from: "noreply@heatarchive.com",
       maxAge: 24 * 60 * 60,
       sendVerificationRequest: async ({ identifier: email, url }) => {
-        // Console-only for dev — magic link logged to terminal
         console.log(`\n[Magic Link] Sign in as ${email}:\n${url}\n`);
       },
       options: {},
